@@ -5,7 +5,6 @@ import { IsNull, LessThan, Raw, Repository } from 'typeorm';
 import { ActivityCode } from 'src/activity-codes/entities/activity-code.entity';
 import { Company } from './entities/company.entity';
 import { ImportCompany } from '../postal-codes/dto/import-companies.dto';
-import { PostalCode } from 'src/postal-codes/entities/postal-code.entity';
 import { CompanyInMemory } from './interfaces/company-in-memory.interface';
 import { PostalCodeInMemory } from '../postal-codes/interfaces/postal-code-in-memory.interface';
 
@@ -104,7 +103,7 @@ export class CompaniesService implements OnModuleInit {
         const companies = await this.companiesRepository.find({
             relations: ['postal_code', 'activity_codes'],
         });
-        console.log(`${ this.dbCompanies.length } companies loaded into memory`);
+        console.log(`Processed companies loaded into memory`);
         return companies.map(company => ({
             name: company.name,
             postal_code: company.postal_code.code,
@@ -127,7 +126,7 @@ export class CompaniesService implements OnModuleInit {
             ],
             relations: ['postal_code', 'activity_codes'],
         });
-        console.log(`${ this.dbUnprocessedCompanies.length } unprocessed companies loaded into memory`);
+        console.log(`Unprocessed companies loaded into memory`);
         return companies.map(company => ({
             id: company.id,
             name: company.name,
@@ -152,7 +151,7 @@ export class CompaniesService implements OnModuleInit {
             ],
             relations: ['postal_code', 'activity_codes'],
         });
-        console.log(`${ this.dbUnprocessedCompaniesWithCif.length } unprocessed companies with cif loaded into memory`);
+        console.log(`Unprocessed companies with cif loaded into memory`);
         return companies.map(company => ({
             id: company.id,
             name: company.name,

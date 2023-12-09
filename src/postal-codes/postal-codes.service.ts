@@ -62,10 +62,11 @@ export class PostalCodesService implements OnModuleInit {
 
         const postalCode = this.getOneByCode(importCompaniesDto.postal_code);
         const activityCode = this.activityCodesService.findOne(importCompaniesDto.activity_code);
-        if (!postalCode || !activityCode) return;
+        if (!postalCode || !activityCode) {
+            console.log(`insertCompanies()->Postal code ${ importCompaniesDto.postal_code } or activity code ${ importCompaniesDto.activity_code } not found`);
+            return;
+        }
         const difficulty = this.getDifficulty(postalCode, activityCode, importCompaniesDto.search_text);
-        // TODO: Always mark finished?
-        let markFinished = true;
 
         if (importCompaniesDto.companies.length === 50) {
             switch (difficulty) {
@@ -79,7 +80,6 @@ export class PostalCodesService implements OnModuleInit {
                     await axios.get(`https://api.telegram.org/bot5367037986:AAEiPHLbFJlg0uhM2nWkRsheSpX-_wtnzlg/sendMessage?chat_id=-1001535964550&disable_web_page_preview=True&parse_mode=markdown&text=${ importCompaniesDto.postal_code }/${ importCompaniesDto.search_text }`);
                     break;
             }
-            markFinished = false;
         }
 
         const importedCompanies = await this.companiesService.importCompanies(importCompaniesDto.companies, postalCode, activityCode);
@@ -91,14 +91,14 @@ export class PostalCodesService implements OnModuleInit {
         return 'ok';
     }
 
-    public async spawnStreetNumberTasks(postalCodeNumber: string, streetName: string, minNumber: string, maxNumber: string): Promise<'ok' | string> {
+    public async spawnStreetNumberTasks(postalCodeNumber: string, streetName: string, minNumber: string, maxNumber: string): Promise<'ok'> {
         const postalCode = this.getOneByCode(postalCodeNumber);
         const activityCodes = this.activityCodesService.findAll();
 
         if (!postalCode) throw new NotFoundException(`Postal code ${ postalCodeNumber } not found`);
-        if (!activityCodes) return 'No activity codes were found in the database';
-        if (!/^\d+$/.test(minNumber)) return 'Incorrect min number';
-        if (!/^\d+$/.test(maxNumber)) return 'Incorrect max number';
+        if (!activityCodes) throw new NotFoundException('No activity codes were found in the database');
+        if (!/^\d+$/.test(minNumber)) throw new NotFoundException('Incorrect min number');
+        if (!/^\d+$/.test(maxNumber)) throw new NotFoundException('Incorrect max number');
 
         streetName = streetName
             .replace(/[^A-ZÑÁÉÍÓÚ\s]/gi, ' ')
@@ -106,40 +106,91 @@ export class PostalCodesService implements OnModuleInit {
             .trim()
             .toUpperCase();
 
-        if (streetName === '') return 'Incorrect street name';
+        if (streetName === '') throw new NotFoundException('Street name is empty');
 
-        const tasksToInsert = [];
-        for (const activityCode of activityCodes) {
-            if (!postalCode.finished.some(activity => activity.code === activityCode.code)) {
-                postalCode.finished.push(activityCode);
-            }
-            for (let i = +minNumber; i <= +maxNumber; i++) {
-                let number = i.toString();
-                number = number.padStart(5, '0');
-                const task = this.postalCodeDifficultActivityCodeRepository.create({
+        const tasksToInsert: PostalCodeDifficultActivityCode[] = activityCodes.flatMap(activityCode =>
+            Array.from({ length: +maxNumber - +minNumber + 1 }, (_, index) => {
+                const number = (index + +minNumber).toString().padStart(5, '0');
+                return this.postalCodeDifficultActivityCodeRepository.create({
                     searchText: `${ streetName } ${ number }`,
                     postalCode: { id: postalCode.id },
                     activityCode: { id: activityCode.id },
                     difficulty: 2,
                 });
-                tasksToInsert.push(task);
-            }
-        }
-        const insertedTasks = await this.postalCodeDifficultActivityCodeRepository.save(tasksToInsert);
-        postalCode.difficult = postalCode.difficult.concat(insertedTasks);
+            }),
+        );
 
-        if (postalCode.state === PostalCodeCompaniesLoadingEnum.FINISHED) {
-            postalCode.state = PostalCodeCompaniesLoadingEnum.STARTED;
-        }
-        postalCode.touchTime = null;
-
-        const PCinDB = await this.postalCodeRepository.findOneBy({ id: postalCode.id });
-        PCinDB.companiesLoadingState = postalCode.state;
-        PCinDB.lastCompaniesAttemptDate = null;
-        PCinDB.finished_activity_codes = postalCode.finished;
-
-        await this.postalCodeRepository.save(PCinDB);
+        await this.disableTasksWithoutSearchText(postalCode, activityCodes);
+        await this.assignDifficultActivities(postalCode, tasksToInsert);
+        await this.resetAttemptDate(postalCode);
         return 'ok';
+    }
+
+    public async spawnKeywordTasks(postalCodeNumber: string, keyword: string): Promise<'ok'> {
+        const postalCode = this.getOneByCode(postalCodeNumber);
+        const activityCodes = this.activityCodesService.findAll();
+
+        if (!postalCode) throw new NotFoundException(`Postal code ${ postalCodeNumber } not found`);
+        if (!activityCodes) throw new NotFoundException('No activity codes were found in the database');
+        if (keyword === '') throw new NotFoundException('Keyword is empty');
+
+        keyword = keyword
+            .replace(/[^A-ZÑÁÉÍÓÚ\s]/gi, ' ')
+            .replace(/ {2,}/g, ' ')
+            .trim()
+            .toUpperCase();
+
+        const tasksToInsert: PostalCodeDifficultActivityCode[] = activityCodes.map(activityCode =>
+            this.postalCodeDifficultActivityCodeRepository.create({
+                searchText: keyword,
+                postalCode: { id: postalCode.id },
+                activityCode: { id: activityCode.id },
+                difficulty: 2,
+            }),
+        );
+
+        await this.disableTasksWithoutSearchText(postalCode, activityCodes);
+        await this.assignDifficultActivities(postalCode, tasksToInsert);
+        await this.resetAttemptDate(postalCode);
+        return 'ok';
+    }
+
+    private async spawnLetterSequenceTasks(postalCode: PostalCodeInMemory, activityCode: ActivityCode, reqText: string): Promise<void> {
+        const allStreets = this.streetsService.findByPostalCode(postalCode.code);
+        const streetsSearchHelper = new StreetsSearchHelper(allStreets);
+        let percent = 30;
+        const { validLetters, frequentLetters } = streetsSearchHelper.findValidLetters(percent);
+        const validLettersWithTwo = streetsSearchHelper.findTwoLetters(
+            validLetters,
+            frequentLetters,
+            percent,
+        );
+
+        let searchTexts: string[] = streetsSearchHelper.findBestCombinations(validLettersWithTwo);
+        if (!Array.isArray(searchTexts)) return;
+
+        const tasksToInsert = searchTexts
+            .filter(searchText => searchText !== reqText)
+            .map(searchText => this.postalCodeDifficultActivityCodeRepository.create({
+                searchText,
+                postalCode: { id: postalCode.id },
+                activityCode,
+                difficulty: 1,
+            }));
+        await this.assignDifficultActivities(postalCode, tasksToInsert);
+    }
+
+    private async spawnStreetTasks(postalCode: PostalCodeInMemory, activityCode: ActivityCode, difficultCombination: string): Promise<void> {
+        const streets = this.streetsService.findByLetters(postalCode.code, difficultCombination);
+        const tasksToInsert: PostalCodeDifficultActivityCode[] = streets
+            .filter(street => street !== difficultCombination && street.trim().length >= 2)
+            .map(street => this.postalCodeDifficultActivityCodeRepository.create({
+                searchText: street,
+                postalCode: { id: postalCode.id },
+                activityCode,
+                difficulty: 2,
+            }));
+        await this.assignDifficultActivities(postalCode, tasksToInsert);
     }
 
     private async preload(): Promise<void> {
@@ -162,10 +213,10 @@ export class PostalCodesService implements OnModuleInit {
     private async difficultiesProcessor(): Promise<void> {
         const queueTask = this.difficultiesQueue.shift();
         if (queueTask && queueTask.genStreets) {
-            await this.insertStreetTasks(queueTask.postalCode, queueTask.activityCode, queueTask.searchText);
+            await this.spawnStreetTasks(queueTask.postalCode, queueTask.activityCode, queueTask.searchText);
             await this.difficultiesProcessor();
         } else if (queueTask) {
-            await this.insertDifficultTasks(queueTask.postalCode, queueTask.activityCode, queueTask.searchText);
+            await this.spawnLetterSequenceTasks(queueTask.postalCode, queueTask.activityCode, queueTask.searchText);
             await this.difficultiesProcessor();
         } else {
             setTimeout(() => this.difficultiesProcessor(), 500);
@@ -289,9 +340,13 @@ export class PostalCodesService implements OnModuleInit {
     }
 
     private async resetAttemptDate(postalCode: PostalCodeInMemory): Promise<void> {
-        const PCinDB = await this.postalCodeRepository.findOneBy({ id: postalCode.id });
+        if (postalCode.state === PostalCodeCompaniesLoadingEnum.FINISHED)
+            postalCode.state = PostalCodeCompaniesLoadingEnum.STARTED;
+
         postalCode.touchTime = null;
+        const PCinDB = await this.postalCodeRepository.findOneBy({ id: postalCode.id });
         PCinDB.lastCompaniesAttemptDate = null;
+        PCinDB.companiesLoadingState = postalCode.state;
         await this.postalCodeRepository.save(PCinDB);
     }
 
@@ -310,49 +365,25 @@ export class PostalCodesService implements OnModuleInit {
         }
     }
 
-    private async insertDifficultTasks(postalCode: PostalCodeInMemory, activityCode: ActivityCode, reqText: string): Promise<void> {
-        const allStreets = this.streetsService.findByPostalCode(postalCode.code);
-        const streetsSearchHelper = new StreetsSearchHelper(allStreets);
-        let percent = 30;
-        const { validLetters, frequentLetters } = streetsSearchHelper.findValidLetters(percent);
-        const validLettersWithTwo = streetsSearchHelper.findTwoLetters(
-            validLetters,
-            frequentLetters,
-            percent,
-        );
-
-        let searchTexts: string[] = streetsSearchHelper.findBestCombinations(validLettersWithTwo);
-        if (!Array.isArray(searchTexts)) return;
-
-        for (const searchText of searchTexts) {
-            if (searchText === reqText) continue;
-            const oneDifficultInsert = this.postalCodeDifficultActivityCodeRepository.create({
-                searchText, postalCode: { id: postalCode.id }, activityCode, difficulty: 1,
-            });
-            try {
-                const addedCode = await this.postalCodeDifficultActivityCodeRepository.save(oneDifficultInsert);
-                if (addedCode) postalCode.difficult.push(addedCode);
-            } catch (err) {
-                console.log('Error inserting difficult activities', err);
-            }
+    private async assignDifficultActivities(postalCode: PostalCodeInMemory, difficultActivities: PostalCodeDifficultActivityCode[]): Promise<void> {
+        if (!difficultActivities.length) return;
+        try {
+            await this.postalCodeDifficultActivityCodeRepository.save(difficultActivities);
+            postalCode.difficult = postalCode.difficult.concat(difficultActivities);
+        } catch (err) {
+            console.log('Error assigning difficult activities', err);
         }
     }
 
-    private async insertStreetTasks(postalCode: PostalCodeInMemory, activityCode: ActivityCode, difficultCombination: string): Promise<void> {
-        const streets = this.streetsService.findByLetters(postalCode.code, difficultCombination);
-        for (let street of streets) {
-            if (street === difficultCombination) continue;
-            if (street.trim().length < 2) continue;
-            const insertStreet = this.postalCodeDifficultActivityCodeRepository.create({
-                searchText: street, postalCode: { id: postalCode.id }, activityCode, difficulty: 2,
-            });
-            try {
-                const addedCode = await this.postalCodeDifficultActivityCodeRepository.save(insertStreet);
-                if (addedCode) postalCode.difficult.push(addedCode);
-            } catch (err) {
-                console.log('Error inserting difficult activities with streets', err);
-            }
-        }
+    private async disableTasksWithoutSearchText(postalCode: PostalCodeInMemory, activityCodes: ActivityCode[]): Promise<void> {
+        const newFinishedActivities = activityCodes.filter(activityCode =>
+            !postalCode.finished.some(finished => finished.code === activityCode.code),
+        );
+        postalCode.finished.push(...newFinishedActivities);
+
+        const PCinDB = await this.postalCodeRepository.findOneBy({ id: postalCode.id });
+        PCinDB.finished_activity_codes = postalCode.finished;
+        await this.postalCodeRepository.save(PCinDB);
     }
 
     async testBB() { // addStreetsToParsing

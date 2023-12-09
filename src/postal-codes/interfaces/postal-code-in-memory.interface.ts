@@ -1,6 +1,6 @@
-import { ActivityCode } from '../activity-codes/entities/activity-code.entity';
-import { PostalCodeCompaniesLoadingEnum } from './enums/postal-code-companies-loading.enum';
-import { PostalCodeDifficultActivityCode } from './entities/postal-code-difficult-activity-code.entity';
+import { ActivityCode } from '../../activity-codes/entities/activity-code.entity';
+import { PostalCodeDifficultActivityCode } from '../entities/postal-code-difficult-activity-code.entity';
+import { PostalCodeCompaniesLoadingEnum } from '../enums/postal-code-companies-loading.enum';
 
 export interface PostalCodeInMemory {
     id: number;

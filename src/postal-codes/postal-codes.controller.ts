@@ -40,13 +40,21 @@ export class PostalCodesController {
     }
 
     @Post('spawn-street-number-tasks')
-    generate(@Body() generateDto: {
+    spawnStreetNumberTasks(@Body() generateDto: {
         postalCodeNumber: string,
         streetName: string,
         minNumber: string,
         maxNumber: string
     }) {
         return this.postalCodesService.spawnStreetNumberTasks(generateDto.postalCodeNumber, generateDto.streetName, generateDto.minNumber, generateDto.maxNumber);
+    }
+
+    @Post('spawn-street-number-tasks')
+    spawnKeywordTasks(@Body() generateDto: {
+        postalCodeNumber: string,
+        keyword: string
+    }) {
+        return this.postalCodesService.spawnKeywordTasks(generateDto.postalCodeNumber, generateDto.keyword);
     }
 
 }
