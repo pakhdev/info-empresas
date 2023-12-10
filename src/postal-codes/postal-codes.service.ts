@@ -1,5 +1,4 @@
 import { Repository } from 'typeorm';
-import axios from 'axios';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 
@@ -47,6 +46,7 @@ export class PostalCodesService implements OnModuleInit {
 
     public async getTasks(): Promise<Task[]> {
         const postalCode = this.getOnePending();
+        if (!postalCode) throw new NotFoundException('No pending postal codes');
         const easyTasks = this.prepareEasyTasks(postalCode);
         const difficultTasks = this.prepareDifficultTasks(postalCode);
         const workQueue = easyTasks.concat(difficultTasks);
@@ -77,7 +77,7 @@ export class PostalCodesService implements OnModuleInit {
                     this.insertToDifficultiesQueue(postalCode, activityCode, importCompaniesDto.search_text, true);
                     break;
                 case 2:
-                    await axios.get(`https://api.telegram.org/bot5367037986:AAEiPHLbFJlg0uhM2nWkRsheSpX-_wtnzlg/sendMessage?chat_id=-1001535964550&disable_web_page_preview=True&parse_mode=markdown&text=${ importCompaniesDto.postal_code }/${ importCompaniesDto.search_text }`);
+                    console.log(`Attention! Inserted 50 companies from ${ importCompaniesDto.search_text } (C.P. ${ importCompaniesDto.postal_code }) with difficulty 2`);
                     break;
             }
         }
@@ -366,10 +366,13 @@ export class PostalCodesService implements OnModuleInit {
     }
 
     private async assignDifficultActivities(postalCode: PostalCodeInMemory, difficultActivities: PostalCodeDifficultActivityCode[]): Promise<void> {
-        if (!difficultActivities.length) return;
+        const filteredDifficultActivities = difficultActivities.filter(activity => {
+            return !postalCode.difficult.some(item => item.searchText === activity.searchText);
+        });
+        if (!filteredDifficultActivities.length) return;
         try {
-            await this.postalCodeDifficultActivityCodeRepository.save(difficultActivities);
-            postalCode.difficult = postalCode.difficult.concat(difficultActivities);
+            await this.postalCodeDifficultActivityCodeRepository.save(filteredDifficultActivities);
+            postalCode.difficult = postalCode.difficult.concat(filteredDifficultActivities);
         } catch (err) {
             console.log('Error assigning difficult activities', err);
         }
@@ -384,53 +387,6 @@ export class PostalCodesService implements OnModuleInit {
         const PCinDB = await this.postalCodeRepository.findOneBy({ id: postalCode.id });
         PCinDB.finished_activity_codes = postalCode.finished;
         await this.postalCodeRepository.save(PCinDB);
-    }
-
-    async testBB() { // addStreetsToParsing
-        const postalCode = this.dbPostalCodes.find(onePostal =>
-            onePostal !== undefined && onePostal !== null && onePostal.id === 1877,
-        );
-        const activityCode = this.activityCodesService.findOne('5011');
-        const startTime = new Date();
-        // const addedStreets = await this.addStreetsToParsing(postalCode, activityCode, 'G');
-    }
-
-    async testAA() { // markDifficultActivity
-        // const postalCode = this.dbPostalCodes.find(onePostal =>
-        //   onePostal !== undefined && onePostal !== null && onePostal.id === 5647
-        // );
-
-        // const activityCode = this.activityCodesService.findOne('5011');
-        // const startTime = new Date();
-        // await this.markDifficultActivity(postalCode, activityCode);
-        // console.log(postalCode.difficult);
-    }
-
-    async testCC() { // markFinishedDifficultActivity
-        const postalCode = this.dbPostalCodes.find(onePostal =>
-            onePostal !== undefined && onePostal !== null && onePostal.id === 5647,
-        );
-        const activityCode = this.activityCodesService.findOne('5011');
-        await this.markFinishedDifficultActivity(postalCode, activityCode, 'ALAVA');
-        console.log(postalCode);
-    }
-
-    async testDD() { // markFinishedActivity
-        const postalCode = this.dbPostalCodes.find(onePostal =>
-            onePostal !== undefined && onePostal !== null && onePostal.id === 1877,
-        );
-        const activityCode = this.activityCodesService.findOne('5021');
-        await this.markFinishedActivity(postalCode, activityCode);
-        console.log(postalCode);
-    }
-
-    testEE() { // insertToDifficultiesQueue
-        // const postalCode = this.dbPostalCodes.find(onePostal =>
-        //   onePostal !== undefined && onePostal !== null && onePostal.id === 1877
-        // );
-        // const activityCode = this.activityCodesService.findOne('5021');
-        // this.insertToDifficultiesQueue(postalCode, activityCode);
-        // this.insertToDifficultiesQueue(postalCode, activityCode, 'testText');
     }
 
 }

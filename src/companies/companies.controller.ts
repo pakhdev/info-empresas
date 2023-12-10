@@ -21,7 +21,7 @@ export class CompaniesController {
     }
 
     // Old route was cifchecked/:id
-    @Get('set-checked/:id')
+    @Get('set-cif-checked/:id')
     setCifChecked(@Param('id') id: string): Promise<'ok'> {
         return this.companiesService.setCifChecked(+id);
     }
