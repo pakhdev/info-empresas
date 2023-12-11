@@ -19,7 +19,6 @@ export class PostalCodesController {
 
     @Get('unprocessed-companies')
     async getTasks() {
-        // Проверяем, выполняется ли уже процесс
         if (this.processPostalCodes$.value) {
             return this.processPostalCodes$.pipe(
                 filter(() => !this.processPostalCodes$.value),
@@ -45,16 +44,21 @@ export class PostalCodesController {
         streetName: string,
         minNumber: string,
         maxNumber: string
-    }) {
+    }): Promise<'ok'> {
         return this.postalCodesService.spawnStreetNumberTasks(generateDto.postalCodeNumber, generateDto.streetName, generateDto.minNumber, generateDto.maxNumber);
     }
 
-    @Post('spawn-street-number-tasks')
+    @Post('spawn-keyword-tasks')
     spawnKeywordTasks(@Body() generateDto: {
         postalCodeNumber: string,
         keyword: string
-    }) {
+    }): Promise<'ok'> {
         return this.postalCodesService.spawnKeywordTasks(generateDto.postalCodeNumber, generateDto.keyword);
+    }
+
+    @Get('reset-all')
+    async resetAllPostalCodes(): Promise<'ok'> {
+        return this.postalCodesService.resetAllPostalCodes();
     }
 
 }

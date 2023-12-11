@@ -24,13 +24,11 @@ export class StreetsService implements OnModuleInit {
     }
 
     findByPostalCode(postalCodeNumber: string): string[] {
-        // TODO: postalCodeNumber should be number, not string?
         const findStreets = this.dbStreets[postalCodeNumber];
         return findStreets ? this.dbStreets[postalCodeNumber] : [];
     }
 
     findByLetters(postalCodeNumber: string, letters: string): string[] {
-        // TODO: postalCodeNumber should be number, not string?
         const streets = this.dbStreets[postalCodeNumber];
         return !streets ? [] : streets.filter(street => street.includes(letters));
     }

@@ -33,6 +33,7 @@ export class CompaniesService implements OnModuleInit {
     }
 
     public async importCompanies(insertCompanies: ImportCompany[], postalCode: PostalCodeInMemory, activityCode: ActivityCode) {
+        if (!insertCompanies.length) return;
         const companiesToCreateOrUpdate: Company[] = [];
 
         for (const insertCompany of insertCompanies) {

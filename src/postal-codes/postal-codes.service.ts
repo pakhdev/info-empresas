@@ -68,6 +68,9 @@ export class PostalCodesService implements OnModuleInit {
         }
         const difficulty = this.getDifficulty(postalCode, activityCode, importCompaniesDto.search_text);
 
+        // Preventing the re-import of companies based on an already completed difficult task
+        if ((difficulty === 0 && importCompaniesDto.search_text !== '') || postalCode.state === PostalCodeCompaniesLoadingEnum.FINISHED) return 'ok';
+
         if (importCompaniesDto.companies.length === 50) {
             switch (difficulty) {
                 case 0:
@@ -88,6 +91,20 @@ export class PostalCodesService implements OnModuleInit {
                 ? await this.markFinishedDifficultActivity(postalCode, activityCode, importCompaniesDto.search_text)
                 : await this.markFinishedActivity(postalCode, activityCode);
         }
+        return 'ok';
+    }
+
+    public async resetAllPostalCodes(): Promise<'ok'> {
+        this.dbPostalCodes.forEach((postalCode: PostalCodeInMemory) => {
+            postalCode.finished = [];
+            postalCode.difficult = [];
+        });
+        await this.postalCodeDifficultActivityCodeRepository.clear();
+        await this.postalCodeRepository.query('TRUNCATE TABLE `postal-codes_finished_activity_codes_activity-codes`');
+        await this.postalCodeRepository.createQueryBuilder().update().set({
+            lastCompaniesAttemptDate: null,
+            companiesLoadingState: PostalCodeCompaniesLoadingEnum.NOTSTARTED,
+        }).execute();
         return 'ok';
     }
 
@@ -352,11 +369,11 @@ export class PostalCodesService implements OnModuleInit {
 
     private async managePostalCodeState(postalCode: PostalCodeInMemory, finishedDifficult: boolean): Promise<void> {
         const remainingCodes = this.getRemainingActivityCodes(postalCode);
-        const pendingDifficultiesProcessing = this.difficultiesQueue.some(difficulty => difficulty.postalCode.code === postalCode.code);
+        const pendingDifficultiesProcessing = this.difficultiesQueue.some(difficulty => difficulty.postalCode.id === postalCode.id);
+
         if (!remainingCodes.length
             && !postalCode.difficult.length
-            && !pendingDifficultiesProcessing
-            && !this.difficultiesQueue.some(difficulty => difficulty.postalCode.id === postalCode.id)) {
+            && !pendingDifficultiesProcessing) {
             await this.markAsFinished(postalCode);
         } else if (!finishedDifficult
             && !remainingCodes.length

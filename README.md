@@ -2,72 +2,94 @@
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
-
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
 ## Installation
 
+1) Install dependencies.
 ```bash
 $ npm install
 ```
+2) Rename the .env.example file to .env and fill in the environment variables.
+3) Start the database container if not using an external one.
+```bash
+$ docker compose up -d
+```
 
 ## Running the app
-
+Attention! The application utilizes deep caching of all data, so when manually modifying data in the database, it is necessary to restart the application.
 ```bash
-# development
 $ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
 ```
 
-## Test
+## Available routes
+Note: If you have modified the port in the .env file, you need to update the port in the routes.
 
+1) Retrieving a list of tasks for collecting company names based on postal code
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+# GET request
+http://localhost:1337/postal-codes/unprocessed-companies
 ```
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](LICENSE).
+2) Inserting companies into the database
+```bash
+# POST request
+http://localhost:1337/companies/insert-companies
+# Example: Request body (RAW-JSON)
+{
+    "postal_code": "01193",
+    "activity_code": "5024",
+    "search_text": "",
+    "companies": [
+        {
+          "name": string,
+          "camara_link": string
+        },
+    ]
+}
+```
+3) Retrieving a company for subsequent gathering of complete information
+```bash
+# GET request (any unprocessed companies)
+http://localhost:1337/companies/one-pending
+# GET request (unprocessed companies already having CIF code)
+http://localhost:1337/companies/one-pending-with-cif
+```
+4) Assigning the ID value for a company to complete information in the remote database
+```bash
+# POST request
+http://localhost:1337/companies/:id
+# Example: Request body (RAW-JSON)
+{
+    "information_id": string
+}
+```
+5) Resetting all postal codes. This operation will reset the state to NOTSTARTED for all postal codes, 
+allowing the information gathering process to be restarted. Additionally, all difficult tasks and records 
+of processed activity codes will be removed. Existing companies will not be affected.
+```bash
+# GET request
+http://localhost:1337/postal-codes/reset-all
+```
+6) Generating difficult tasks for a specific street with house numbers. The search without a keyword will be
+automatically deactivated for all activity codes and postal codes.
+```bash
+# POST request
+http://localhost:1337/postal-codes/spawn-street-number-tasks
+# Example: Request body (RAW-JSON)
+{
+    "postalCodeNumber": string,
+    "streetName": string,
+    "minNumber": string,
+    "maxNumber": string
+}
+```
+7) Generating complex tasks for a specific keyword (for example, a company name). Tasks will be generated for 
+all postal codes and activity codes. The keyword will be placed in the searchText. Search without a keyword will
+be automatically deactivated for all activity codes and postal codes.
+```bash
+# POST request
+http://localhost:1337/postal-codes/spawn-keyword-tasks
+# Example: Request body (RAW-JSON)
+{
+    "postalCodeNumber": string,
+    "keyword": string
+}
+```
